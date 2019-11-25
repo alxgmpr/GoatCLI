@@ -11,6 +11,7 @@ Copyright 2018 Alexander Gompper - All Rights Reserved
 
 from classes.logger import Logger
 from classes.worker import Worker
+from classes.purchaser import Purchaser
 from classes.proxy import Proxy
 
 import csv
@@ -18,35 +19,19 @@ from time import sleep
 import urllib3
 
 import requests
-from requests.exceptions import Timeout
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-PROXYFILE = 'proxies.txt'
-CSVFILE = 'csv/accounts.csv'
-
-DUMMYUSER = 'xxx'
-DUMMYPASS = 'yyy'
+PROXY_FILE_PATH = 'proxies.txt'
+CSV_FILE_PATH = 'csv/accounts.csv'
 
 
 def main():
     l = Logger(lid='M')
     log = l.log
-    error = l.error
-
-    s = requests.Session()
-    s.verify = False
-    s.headers = {
-        'Host': 'www.goat.com',
-        'Accept-Encoding': 'gzip,deflate',
-        'Connection': 'keep-alive',
-        'Accept': '*/*',
-        'Accept-Language': 'en-US;q=1',
-        'User-Agent': 'GOAT/2.7.0 (iPhone; iOS 12.1; Scale/3.00)'  # Keep this updated.
-    }
 
     print(('=' * 20).center(80, ' '))
-    print('GOAT Black Friday / Summer Raffle Tickets'.center(80, ' '))
+    print('GOAT Black Friday and Autocheckout'.center(80, ' '))
     print(
         """
 
@@ -57,7 +42,7 @@ def main():
                                            
         """
     )
-    print('\u00a92018 Alexander Gompper'.center(80, ' '))
+    print('\u00a92019 Alexander Gompper'.center(80, ' '))
     print(('=' * 20).center(80, ' '))
 
     # Collection of workers
@@ -65,92 +50,27 @@ def main():
 
     # Collection of proxies
     log('Loading proxies')
-    manager = Proxy(PROXYFILE)
+    manager = Proxy(PROXY_FILE_PATH)
     log('Using {} proxies'.format(len(manager.proxies)))
 
-    # TODO: change status code handling for 429 errors from scraping
-
-    # Collection of products
-    log('Loading products')
-    products = []
-    for page in range(5):
-        sleep(1)
-        url = 'https://www.goat.com/api/v1/contests/3?page={}'.format(page)
-        try:
-            r = s.get(
-                url,
-                timeout=5
-            )
-            if r.status_code == 200:
-                try:
-                    r = r.json()
-                    for prod in r['productTemplates']:
-                        products.append(prod['id'])
-                        # log('{} \t\t|| {}'.format(prod['id'], prod['name'].encode('utf-8')))
-                    log('scraped {} ids'.format(len(products)))
-                except KeyError:
-                    error('[failed] failed to scrape product ids')
-                    return False
-            else:
-                error('got bad status code {} from pid scrape'.format(r.status_code))
-                return False
-        except Timeout:
-            error('[error] timeout from pid scrape')
-            return False
-    print(products)
-    sleep(3)
-
-    # Collection of locations
-    log('Loading locations')
-    # Need to have a dummy worker to login so that we dont get denied looking for locations
-    # No clue why you must be logged in to get location ids but not social... nice.
-    dummy_worker = Worker(username=DUMMYUSER, password=DUMMYPASS)
-    dummy_worker.login()
-    locations = []
-    url = 'https://www.goat.com/api/v1/contests/3/locations'
-    try:
-        r = dummy_worker.s.get(
-            url,
-            timeout=5
-        )
-        if r.status_code == 200:
-            try:
-                r = r.json()
-                for loc in r:
-                    locations.append(loc['id'])
-                    # log('{} \t {}'.format(loc['id'], loc['name'].encode('utf-8')))
-                log('scraped {} loc ids'.format(len(locations)))
-            except KeyError:
-                error('couldnt find location ids')
-                return False
-        else:
-            error('got bad status code {} from loc scrape'.format(r.status_code))
-            return False
-    except requests.exceptions.Timeout:
-        error('timeout from loc scrape')
-        return False
-    print(locations)
-    sleep(3)
-
     log('Loading accounts')
-    with open(CSVFILE) as csvfile:
-        reader = csv.reader(csvfile)
+    with open(CSV_FILE_PATH) as csv_file:
+        reader = csv.reader(csv_file)
         log('Loaded {} accounts'.format(sum(1 for _ in reader)))
         log('=' * 20)
 
-        csvfile.seek(0)
+        csv_file.seek(0)
         for idx, row in enumerate(reader):
             w = Worker(
                 username=row[0],
                 password=row[1],
                 proxy=manager.get_proxy(),
-                products=products,
-                locations=locations,
+                products=None,
                 skip_to_idx=row[2]  # In case you crash or something you can skip all the previous entries
             )
-            w.start()
             workers.append(w)
-            sleep(0.05)
+            workers[idx].start()
+            sleep(0.1)  # makes output a little cleaner tbh
 
 
 if __name__ == '__main__':
